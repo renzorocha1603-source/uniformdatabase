@@ -104,10 +104,12 @@ TXT = {
         "no_processed": "No receipts have been processed or marked as reimbursed yet.",
         "syncing": "Writing transaction data securely to ledger...",
         "chart_label": "Used of Limit",
-        "img_preview_title": "🔍 Secure Receipt Image Preview Console",
-        "img_preview_instruction": "Select a receipt record index to pull its validation image copy:",
+        "img_preview_title": "🔍 Secure Receipt Management & Preview Console",
+        "img_preview_instruction": "Select a receipt record index to audit or manage:",
         "img_preview_empty": "No transaction image payload exists for this index profile.",
-        "no_any_receipts": "No transactions have been recorded in the system yet."
+        "no_any_receipts": "No transactions have been recorded in the system yet.",
+        "delete_tx_btn": "❌ Permanently Delete This Transaction Entry",
+        "delete_tx_success": "✅ Transaction successfully purged from database and synced to GitHub!"
     },
     "Français": {
         "title": "Base de données de remboursement des uniformes Indigo",
@@ -165,10 +167,12 @@ TXT = {
         "no_processed": "Aucun reçu n'a encore été marqué comme remboursé.",
         "syncing": "Écriture sécurisée des données dans le registre...",
         "chart_label": "Utilisé de la limite",
-        "img_preview_title": "🔍 Console d'aperçu de la photo du reçu",
-        "img_preview_instruction": "Sélectionnez une transaction pour charger sa pièce jointe correspondante :",
+        "img_preview_title": "🔍 Console de gestion et d'aperçu des transactions",
+        "img_preview_instruction": "Sélectionnez une transaction pour l'analyser ou la supprimer :",
         "img_preview_empty": "Aucune image de reçu attachée à cette transaction.",
-        "no_any_receipts": "Aucun reçu n'a été enregistré dans le système pour le moment."
+        "no_any_receipts": "Aucun reçu n'a été enregistré dans le système pour le moment.",
+        "delete_tx_btn": "❌ Supprimer définitivement cette transaction",
+        "delete_tx_success": "✅ Transaction supprimée avec succès du registre et synchronisée sur GitHub !"
     }
 }
 
@@ -297,7 +301,7 @@ elif st.session_state["user_role"] == "admin":
                 },
                 disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"],
                 use_container_width=True,
-                key="admin_pending_editor_v2"
+                key="admin_pending_editor_v3"
             )
             
             if not edited_pending["Reimbursed"].equals(pending_df["Reimbursed"]):
@@ -328,26 +332,55 @@ elif st.session_state["user_role"] == "admin":
                 processed_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
                 disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"],
                 use_container_width=True,
-                key="admin_processed_editor_v2"
+                key="admin_processed_editor_v3"
             )
         else:
             st.info(active_txt["no_processed"])
             
         st.markdown("---")
         
-        # SECTION 3: BULLETPROOF SELECTBOX PREVIEWER PANEL
+        # SECTION 3: MANAGEMENT PANEL (PREVIEW + DELETION LOGIC)
         st.write(f"#### {active_txt['img_preview_title']}")
         if not receipts_df.empty:
-            # Build clean drop-down labels: "Name - Store ($Amount) [Timestamp]"
             receipts_df["DropdownLabel"] = receipts_df["Name"] + " - " + receipts_df["Store"] + " ($" + receipts_df["ReceiptAmount"].astype(str) + ") [" + receipts_df["Timestamp"] + "]"
             label_options = receipts_df["DropdownLabel"].tolist()
             
-            selected_label = st.selectbox(active_txt["img_preview_instruction"], label_options, index=0)
+            col_select, col_delete = st.columns([2.5, 1.5])
+            
+            with col_select:
+                selected_label = st.selectbox(active_txt["img_preview_instruction"], label_options, index=0)
             
             if selected_label:
                 matched_row = receipts_df[receipts_df["DropdownLabel"] == selected_label].iloc[0]
+                selected_timestamp = matched_row["Timestamp"]
+                selected_emp_id = matched_row["EmployeeID"]
                 selected_image_str = matched_row["ReceiptImage"]
                 
+                with col_delete:
+                    st.markdown('<div class="delete-btn" style="margin-top: 28px;">', unsafe_allow_html=True)
+                    delete_tx_clicked = st.button(active_txt["delete_tx_btn"], use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    if delete_tx_clicked:
+                        # Drop row based on exact combination keys
+                        updated_receipts_df = receipts_df[~(
+                            (receipts_df["Timestamp"] == selected_timestamp) & 
+                            (receipts_df["EmployeeID"] == selected_emp_id)
+                        )].copy()
+                        
+                        # Strip dropdown parsing construction helper row column out before filing to excel
+                        if "DropdownLabel" in updated_receipts_df.columns:
+                            updated_receipts_df = updated_receipts_df.drop(columns=["DropdownLabel"])
+                            
+                        with st.spinner(active_txt["syncing"]):
+                            res = save_and_push_to_github(updated_receipts_df, users_df)
+                            if res["success"]:
+                                st.success(active_txt["delete_tx_success"])
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Deletion failed to push to GitHub registry: {res['error']}")
+                
+                # Render Image underneath actions
                 if selected_image_str and selected_image_str.strip() != "":
                     try:
                         img_bytes = base64.b64decode(selected_image_str)
