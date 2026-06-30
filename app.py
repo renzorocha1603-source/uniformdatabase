@@ -169,24 +169,33 @@ with col_lang:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- DATABASE CONTROL LAYER ---
+# --- DATABASE CONTROL LAYER (SELF-HEALING) ---
 EXCEL_FILE = "database.xlsx"
 
 def load_database():
+    req_receipts = ["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]
+    req_users = ["Username", "Password", "Name", "EmployeeID", "Type", "Limit"]
+    
     if os.path.exists(EXCEL_FILE):
         try: 
             receipts_df = pd.read_excel(EXCEL_FILE, sheet_name="receipts")
-            if "Reimbursed" not in receipts_df.columns:
-                receipts_df["Reimbursed"] = False
+            for col in req_receipts:
+                if col not in receipts_df.columns: receipts_df[col] = False if col == "Reimbursed" else ""
         except: 
-            receipts_df = pd.DataFrame(columns=["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"])
-        try: users_df = pd.read_excel(EXCEL_FILE, sheet_name="users")
-        except: users_df = pd.DataFrame(columns=["Username", "Password", "Name", "EmployeeID", "Type", "Limit"])
+            receipts_df = pd.DataFrame(columns=req_receipts)
+            
+        try: 
+            users_df = pd.read_excel(EXCEL_FILE, sheet_name="users")
+            for col in req_users:
+                if col not in users_df.columns: users_df[col] = ""
+        except: 
+            users_df = pd.DataFrame(columns=req_users)
     else:
-        receipts_df = pd.DataFrame(columns=["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"])
-        users_df = pd.DataFrame(columns=["Username", "Password", "Name", "EmployeeID", "Type", "Limit"])
+        receipts_df = pd.DataFrame(columns=req_receipts)
+        users_df = pd.DataFrame(columns=req_users)
     
     receipts_df["Reimbursed"] = receipts_df["Reimbursed"].astype(bool)
+    users_df["Username"] = users_df["Username"].astype(str).str.strip().str.lower()
     return receipts_df, users_df
 
 def save_and_push_to_github(receipts_df, users_df):
@@ -282,11 +291,10 @@ elif st.session_state["user_role"] == "admin":
             
     # TAB 2: STAFF ROSTER & MUTATION ACTIONS
     with tab_staff:
-        # Registration Section
         with st.form("create_user_form", clear_on_submit=True):
             st.write(f"#### {active_txt['create_title']}")
             new_user = st.text_input(active_txt["form_user"]).strip().lower()
-            new_pass = st.text_input(active_txt["form_pass"]).strip()
+            new_pass = st.text_input(active_txt["form_pass"], type="password").strip()
             new_name = st.text_input(active_txt["form_name"]).strip()
             new_id = st.text_input(active_txt["form_id"]).strip().upper()
             
@@ -311,19 +319,16 @@ elif st.session_state["user_role"] == "admin":
                         st.success(f"{active_txt['success_reg']} {new_name}!")
                         st.rerun()
 
-        # Display Section
         st.write(f"#### {active_txt['roster']}")
         if not users_df.empty:
             st.dataframe(users_df[["EmployeeID", "Name", "Type", "Limit", "Username"]], use_container_width=True)
             
-            # Deletion Section (Appended cleanly below roster dataframe)
             st.markdown("---")
             with st.form("delete_user_form"):
                 st.write(f"#### {active_txt['delete_title']}")
                 user_list = users_df["Username"].tolist()
                 target_user = st.selectbox(active_txt["delete_select"], user_list)
                 
-                # HTML injection block wrapper to apply red warning tone to form push button
                 st.markdown('<div class="delete-btn">', unsafe_allow_html=True)
                 delete_btn = st.form_submit_button(active_txt["delete_btn"])
                 st.markdown('</div>', unsafe_allow_html=True)
