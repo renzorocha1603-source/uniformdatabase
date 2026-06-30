@@ -164,7 +164,6 @@ def load_database():
         receipts_df = pd.DataFrame(columns=["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"])
         users_df = pd.DataFrame(columns=["Username", "Password", "Name", "EmployeeID", "Type", "Limit"])
     
-    # Ensure boolean structure
     receipts_df["Reimbursed"] = receipts_df["Reimbursed"].astype(bool)
     return receipts_df, users_df
 
@@ -173,12 +172,15 @@ def save_and_push_to_github(receipts_df, users_df):
         receipts_df.to_excel(writer, sheet_name="receipts", index=False)
         users_df.to_excel(writer, sheet_name="users", index=False)
     try:
+        # Secure Environment Lookup
         token = st.secrets["github"]["token"]
         repo_url = st.secrets["github"]["repo_url"]
+        
         authenticated_url = repo_url.replace("https://", f"https://oauth2:{token}@")
         repo = Repo(".")
         try: origin = repo.remote(name="origin"); origin.set_url(authenticated_url)
         except: origin = repo.create_remote("origin", authenticated_url)
+        
         repo.git.add(EXCEL_FILE)
         repo.index.commit("Automated secure database update [Only Solutions System]")
         origin.push("main")
@@ -218,7 +220,7 @@ if not st.session_state["logged_in"]:
                 else: st.error(active_txt["invalid_pass"])
             else: st.error(active_txt["invalid_user"])
 
-# --- PHASE 2: ADMIN PANEL (With Checkbox Processing Row) ---
+# --- PHASE 2: ADMIN PANEL ---
 elif st.session_state["user_role"] == "admin":
     st.sidebar.title("Admin")
     if st.sidebar.button(active_txt["logout"]):
@@ -227,10 +229,8 @@ elif st.session_state["user_role"] == "admin":
         
     st.write(f"### {active_txt['admin_title']}")
     
-    # Global Verification Module
     st.write(f"#### {active_txt['claims_ledger']}")
     if not receipts_df.empty:
-        # Display editable table specifically configuration checking the boolean tracking rows
         edited_df = st.data_editor(
             receipts_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
             column_config={
@@ -245,7 +245,6 @@ elif st.session_state["user_role"] == "admin":
             key="admin_editor"
         )
         
-        # Check if the admin changed any checkmarks
         if not edited_df["Reimbursed"].equals(receipts_df["Reimbursed"]):
             if st.button(active_txt["save_status_btn"]):
                 receipts_df["Reimbursed"] = edited_df["Reimbursed"]
@@ -269,7 +268,7 @@ elif st.session_state["user_role"] == "admin":
         
         if create_btn:
             if not (new_user and new_pass and new_name and new_id):
-                st.error(active_fields)
+                st.error(active_txt["err_fields"])
             elif not users_df.empty and new_user in users_df["Username"].values:
                 st.error(active_txt["err_conflict"])
             else:
@@ -288,7 +287,7 @@ elif st.session_state["user_role"] == "admin":
     if not users_df.empty:
         st.dataframe(users_df[["EmployeeID", "Name", "Type", "Limit", "Username"]], use_container_width=True)
 
-# --- PHASE 3: MODERN EMPLOYEE PORTAL & GRAPHIC ---
+# --- PHASE 3: EMPLOYEE PORTAL ---
 else:
     user_record = users_df[users_df["Username"] == st.session_state["username"]].iloc[0]
     emp_id = user_record["EmployeeID"]
