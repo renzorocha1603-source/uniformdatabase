@@ -24,6 +24,10 @@ st.markdown("""
     
     .stButton>button { background-color: #1E3A8A !important; color: #FFFFFF !important; border-radius: 6px !important; border: none !important; transition: all 0.2s ease; }
     .stButton>button:hover { background-color: #1D4ED8 !important; transform: translateY(-1px); }
+    
+    /* Dynamic Tabs Styling Customization */
+    button[data-baseweb="tab"] { color: #64748B !important; font-weight: 600 !important; }
+    button[data-baseweb="tab"][aria-selected="true"] { color: #1E3A8A !important; border-bottom-color: #1E3A8A !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -50,6 +54,8 @@ TXT = {
         "invalid_user": "❌ Credentials unrecognized by system registries.",
         "logout": "🚪 Log Out",
         "admin_title": "🛠️ Administrative Control Console",
+        "tab_receipts": "📋 Receipts Verification Ledger",
+        "tab_staff": "👤 Staff Roster Management",
         "create_title": "Create/Register New Staff Profile",
         "form_user": "Assigned Username (lowercase, no spaces):",
         "form_pass": "Temporary Password:",
@@ -62,7 +68,7 @@ TXT = {
         "err_conflict": "❌ Account profile username conflict encountered.",
         "success_reg": "✅ Secure profile successfully mapped for",
         "roster": "Active Registered Staff Roster",
-        "claims_ledger": "📋 Global Employee Receipts Log (Interactive Check-off)",
+        "claims_ledger": "Global Employee Receipts Log (Interactive Check-off)",
         "save_status_btn": "💾 Save Verification Changes",
         "status_success": "✅ Receipt verification status updated and synced to GitHub!",
         "welcome": "Welcome back",
@@ -97,6 +103,8 @@ TXT = {
         "invalid_user": "❌ Identifiants non reconnus par les registres du système.",
         "logout": "🚪 Se déconnecter",
         "admin_title": "🛠️ Console de contrôle administratif",
+        "tab_receipts": "📋 Vérification des reçus",
+        "tab_staff": "👤 Gestion du personnel",
         "create_title": "Créer/Enregistrer un nouveau profil d'employé",
         "form_user": "Nom d'utilisateur assigné (minuscules, sans espace) :",
         "form_pass": "Mot de passe temporaire :",
@@ -109,7 +117,7 @@ TXT = {
         "err_conflict": "❌ Conflit de nom d'utilisateur rencontré.",
         "success_reg": "✅ Profil de compte sécurisé configuré avec succès pour",
         "roster": "Roster du personnel actif enregistré",
-        "claims_ledger": "📋 Registre global des reçus (Cochez pour confirmer le remboursement)",
+        "claims_ledger": "Registre global des reçus (Cochez pour confirmer le remboursement)",
         "save_status_btn": "💾 Sauvegarder les vérifications",
         "status_success": "✅ Statut de vérification mis à jour et synchronisé sur GitHub !",
         "welcome": "Bon retour",
@@ -172,7 +180,6 @@ def save_and_push_to_github(receipts_df, users_df):
         receipts_df.to_excel(writer, sheet_name="receipts", index=False)
         users_df.to_excel(writer, sheet_name="users", index=False)
     try:
-        # Secure Environment Lookup
         token = st.secrets["github"]["token"]
         repo_url = st.secrets["github"]["repo_url"]
         
@@ -220,7 +227,7 @@ if not st.session_state["logged_in"]:
                 else: st.error(active_txt["invalid_pass"])
             else: st.error(active_txt["invalid_user"])
 
-# --- PHASE 2: ADMIN PANEL ---
+# --- PHASE 2: ADMIN PANEL WITH INTEGRATED TABS ---
 elif st.session_state["user_role"] == "admin":
     st.sidebar.title("Admin")
     if st.sidebar.button(active_txt["logout"]):
@@ -229,63 +236,69 @@ elif st.session_state["user_role"] == "admin":
         
     st.write(f"### {active_txt['admin_title']}")
     
-    st.write(f"#### {active_txt['claims_ledger']}")
-    if not receipts_df.empty:
-        edited_df = st.data_editor(
-            receipts_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
-            column_config={
-                "Reimbursed": st.column_config.CheckboxColumn(
-                    "Reimbursed (OK)",
-                    help="Check this once finance pays out or verifies the receipt manual submission.",
-                    default=False,
-                )
-            },
-            disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"],
-            use_container_width=True,
-            key="admin_editor"
-        )
-        
-        if not edited_df["Reimbursed"].equals(receipts_df["Reimbursed"]):
-            if st.button(active_txt["save_status_btn"]):
-                receipts_df["Reimbursed"] = edited_df["Reimbursed"]
-                with st.spinner(active_txt["syncing"]):
+    tab_receipts, tab_staff = st.tabs([active_txt["tab_receipts"], active_txt["tab_staff"]])
+    
+    # TAB 1: RECEIPTS AUDIT LOG
+    with tab_receipts:
+        st.write(f"#### {active_txt['claims_ledger']}")
+        if not receipts_df.empty:
+            edited_df = st.data_editor(
+                receipts_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
+                column_config={
+                    "Reimbursed": st.column_config.CheckboxColumn(
+                        "Reimbursed (OK)",
+                        help="Check this once finance pays out or verifies the receipt manual submission.",
+                        default=False,
+                    )
+                },
+                disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"],
+                use_container_width=True,
+                key="admin_editor"
+            )
+            
+            if not edited_df["Reimbursed"].equals(receipts_df["Reimbursed"]):
+                if st.button(active_txt["save_status_btn"]):
+                    receipts_df["Reimbursed"] = edited_df["Reimbursed"]
+                    with st.spinner(active_txt["syncing"]):
+                        if save_and_push_to_github(receipts_df, users_df):
+                            st.success(active_txt["status_success"])
+                            st.rerun()
+        else:
+            st.info(active_txt["no_logs"])
+            
+    # TAB 2: STAFF ROSTER MANAGEMENT
+    with tab_staff:
+        with st.form("create_user_form", clear_on_submit=True):
+            st.write(f"#### {active_txt['create_title']}")
+            new_user = st.text_input(active_txt["form_user"]).strip().lower()
+            new_pass = st.text_input(active_txt["form_pass"]).strip()
+            new_name = st.text_input(active_txt["form_name"]).strip()
+            new_id = st.text_input(active_txt["form_id"]).strip().upper()
+            
+            type_options = [active_txt["ft"], active_txt["pt"]]
+            new_type_sel = st.selectbox(active_txt["form_type"], type_options)
+            create_btn = st.form_submit_button(active_txt["save_btn"])
+            
+            if create_btn:
+                if not (new_user and new_pass and new_name and new_id):
+                    st.error(active_txt["err_fields"])
+                elif not users_df.empty and new_user in users_df["Username"].values:
+                    st.error(active_txt["err_conflict"])
+                else:
+                    db_type_string = "Full-Time" if new_type_sel == active_txt["ft"] else "Part-Time"
+                    limit_allocation = 175.00 if db_type_string == "Full-Time" else 100.00
+                    new_profile = pd.DataFrame([{
+                        "Username": new_user, "Password": new_pass, "Name": new_name,
+                        "EmployeeID": new_id, "Type": db_type_string, "Limit": limit_allocation
+                    }])
+                    users_df = pd.concat([users_df, new_profile], ignore_index=True)
                     if save_and_push_to_github(receipts_df, users_df):
-                        st.success(active_txt["status_success"])
+                        st.success(f"{active_txt['success_reg']} {new_name}!")
                         st.rerun()
-    else:
-        st.info(active_txt["no_logs"])
 
-    with st.form("create_user_form", clear_on_submit=True):
-        st.write(f"#### {active_txt['create_title']}")
-        new_user = st.text_input(active_txt["form_user"]).strip().lower()
-        new_pass = st.text_input(active_txt["form_pass"]).strip()
-        new_name = st.text_input(active_txt["form_name"]).strip()
-        new_id = st.text_input(active_txt["form_id"]).strip().upper()
-        
-        type_options = [active_txt["ft"], active_txt["pt"]]
-        new_type_sel = st.selectbox(active_txt["form_type"], type_options)
-        create_btn = st.form_submit_button(active_txt["save_btn"])
-        
-        if create_btn:
-            if not (new_user and new_pass and new_name and new_id):
-                st.error(active_txt["err_fields"])
-            elif not users_df.empty and new_user in users_df["Username"].values:
-                st.error(active_txt["err_conflict"])
-            else:
-                db_type_string = "Full-Time" if new_type_sel == active_txt["ft"] else "Part-Time"
-                limit_allocation = 175.00 if db_type_string == "Full-Time" else 100.00
-                new_profile = pd.DataFrame([{
-                    "Username": new_user, "Password": new_pass, "Name": new_name,
-                    "EmployeeID": new_id, "Type": db_type_string, "Limit": limit_allocation
-                }])
-                users_df = pd.concat([users_df, new_profile], ignore_index=True)
-                if save_and_push_to_github(receipts_df, users_df):
-                    st.success(f"{active_txt['success_reg']} {new_name}!")
-                    st.rerun()
-
-    st.write(f"#### {active_txt['roster']}")
-    if not users_df.empty:
-        st.dataframe(users_df[["EmployeeID", "Name", "Type", "Limit", "Username"]], use_container_width=True)
+        st.write(f"#### {active_txt['roster']}")
+        if not users_df.empty:
+            st.dataframe(users_df[["EmployeeID", "Name", "Type", "Limit", "Username"]], use_container_width=True)
 
 # --- PHASE 3: EMPLOYEE PORTAL ---
 else:
