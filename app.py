@@ -7,10 +7,9 @@ from git import Repo
 # --- MODERN WHITE THEME & BRAND STYLING ---
 st.set_page_config(page_title="Indigo Uniforms Reimbursement Database", page_icon="👔", layout="centered")
 
-# CSS to override defaults and make a crisp, modern, light user interface
+# CSS to make a crisp, modern, light user interface
 st.markdown("""
     <style>
-    /* Reset and background colors */
     .stApp { background-color: #FFFFFF; }
     h1, h2, h3, h4, h5, h6, p, span, label { color: #1E293B !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     
@@ -21,8 +20,6 @@ st.markdown("""
     
     /* Clean Dashboard Cards */
     .metric-card { background: #FFFFFF; padding: 24px; border-radius: 12px; border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; }
-    .metric-value { font-size: 24px; font-weight: 700; color: #0F172A; }
-    .metric-label { font-size: 13px; color: #64748B; font-weight: 500; }
     
     /* Circular Progress Graphic Styling */
     .circle-container { display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 20px 0; }
@@ -32,12 +29,11 @@ st.markdown("""
     div[data-testid="stForm"] { border: 1px solid #E2E8F0 !important; border-radius: 12px !important; padding: 30px !important; background-color: #FFFFFF !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02) !important; }
     
     /* Clean Minimalist Buttons */
-    .stButton>button { background-color: #1E3A8A !important; color: #FFFFFF !important; border-radius: 6px !important; border: none !important; font-weight: 6px !important; transition: all 0.2s ease; }
+    .stButton>button { background-color: #1E3A8A !important; color: #FFFFFF !important; border-radius: 6px !important; border: none !important; transition: all 0.2s ease; }
     .stButton>button:hover { background-color: #1D4ED8 !important; transform: translateY(-1px); }
     </style>
 """, unsafe_allow_html=True)
 
-# Definition of the Indigo Logo Asset hosted via ImgBB
 LOGO_URL = "https://i.ibb.co/mVRXHXpx/indigo-park-canada-logo.jpg"
 
 if "lang" not in st.session_state:
@@ -50,7 +46,7 @@ col_logo, col_titles, col_lang = st.columns([1, 4, 1.5])
 with col_logo:
     st.image(LOGO_URL, use_container_width=True)
 
-# 2. Definition of Bilingual Translation Dictionaries
+# Definition of Bilingual Translation Dictionaries
 TXT = {
     "English": {
         "title": "Indigo Uniforms Reimbursement Database",
@@ -67,14 +63,15 @@ TXT = {
         "form_user": "Assigned Username (lowercase, no spaces):",
         "form_pass": "Temporary Password:",
         "form_name": "Full Employee Name:",
-        "form_id": "Unique Employee ID (e.g., OS005):",
+        "form_id": "Unique Employee ID:",
         "form_type": "Employment Designation:",
         "pt": "Part-Time", "ft": "Full-Time",
         "save_btn": "Register & Save Profile",
-        "err_fields": "❌ All form payload parameters must be functionally satisfied.",
+        "err_fields": "❌ All form parameters must be completed.",
         "err_conflict": "❌ Account profile username conflict encountered.",
         "success_reg": "✅ Secure profile successfully mapped for",
         "roster": "Active Registered Staff Roster",
+        "claims_ledger": "📋 Global Employee Receipts Log (For Verification Check)",
         "welcome": "Welcome back",
         "emp_code": "Employee ID:",
         "status_assign": "Status Assignment:",
@@ -111,7 +108,7 @@ TXT = {
         "form_user": "Nom d'utilisateur assigné (minuscules, sans espace) :",
         "form_pass": "Mot de passe temporaire :",
         "form_name": "Nom complet de l'employé :",
-        "form_id": "Identifiant d'employé unique (ex: OS005) :",
+        "form_id": "Identifiant d'employé unique :",
         "form_type": "Désignation de l'emploi :",
         "pt": "Temps partiel", "ft": "Temps plein",
         "save_btn": "Enregistrer et sauvegarder le profil",
@@ -119,6 +116,7 @@ TXT = {
         "err_conflict": "❌ Conflit de nom d'utilisateur rencontré.",
         "success_reg": "✅ Profil de compte sécurisé configuré avec succès pour",
         "roster": "Roster du personnel actif enregistré",
+        "claims_ledger": "📋 Registre global des reçus d'employés (Pour vérification)",
         "welcome": "Bon retour",
         "emp_code": "ID de l'employé :",
         "status_assign": "Statut d'emploi :",
@@ -218,7 +216,7 @@ if not st.session_state["logged_in"]:
                 else: st.error(active_txt["invalid_pass"])
             else: st.error(active_txt["invalid_user"])
 
-# --- PHASE 2: ADMIN PANEL ---
+# --- PHASE 2: ADMIN PANEL (Check logs to corroborate user requests) ---
 elif st.session_state["user_role"] == "admin":
     st.sidebar.title("Admin")
     if st.sidebar.button(active_txt["logout"]):
@@ -254,6 +252,13 @@ elif st.session_state["user_role"] == "admin":
                     st.success(f"{active_txt['success_reg']} {new_name}!")
                     st.rerun()
 
+    # Admin verification tool: Check global receipts log
+    st.write(f"#### {active_txt['claims_ledger']}")
+    if not receipts_df.empty:
+        st.dataframe(receipts_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"]], use_container_width=True)
+    else:
+        st.info(active_txt["no_logs"])
+
     st.write(f"#### {active_txt['roster']}")
     if not users_df.empty:
         st.dataframe(users_df[["EmployeeID", "Name", "Type", "Limit", "Username"]], use_container_width=True)
@@ -271,7 +276,7 @@ else:
     if not receipts_df.empty:
         receipts_df["EmployeeID"] = receipts_df["EmployeeID"].astype(str).str.strip().str.upper()
         receipts_df["ReimbursedAmount"] = pd.to_numeric(receipts_df["ReimbursedAmount"], errors='coerce').fillna(0.0)
-        emp_history = receipts_df[receipts_df["EmployeeID"] == emp_id]
+        emp_history = receipts_df[receipts_df["EmployeeID"] == str(emp_id).strip().upper()]
         total_spent = emp_history["ReimbursedAmount"].sum()
     else: total_spent = 0.0
         
@@ -301,7 +306,7 @@ else:
         """, unsafe_allow_html=True)
         
     with col_graphic:
-        # Inline injection of an animated vector circle tracker
+        # Inline injection of vector circle tracker
         st.markdown(f"""
         <div class="metric-card circle-container">
             <svg viewBox="0 0 36 36" class="svg-item">
@@ -333,7 +338,7 @@ else:
                     st.success(f"{active_txt['success_claim']} **${reimbursed_amount:.2f}**.")
                 
                 new_receipt = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "EmployeeID": emp_id,
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "EmployeeID": str(emp_id),
                     "Name": user_record["Name"], "Type": user_record["Type"], "Store": store_name,
                     "ReceiptAmount": receipt_amount, "ReimbursedAmount": reimbursed_amount
                 }])
@@ -345,7 +350,7 @@ else:
 
     st.write(active_txt["ledger_title"])
     if not receipts_df.empty:
-        personal_logs = receipts_df[receipts_df["EmployeeID"] == emp_id]
+        personal_logs = receipts_df[receipts_df["EmployeeID"] == str(emp_id)]
         if not personal_logs.empty:
             st.dataframe(personal_logs[["Timestamp", "Store", "ReceiptAmount", "ReimbursedAmount"]], use_container_width=True)
         else: st.info(active_txt["no_logs"])
