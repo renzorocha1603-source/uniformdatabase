@@ -25,6 +25,10 @@ st.markdown("""
     .stButton>button { background-color: #1E3A8A !important; color: #FFFFFF !important; border-radius: 6px !important; border: none !important; transition: all 0.2s ease; }
     .stButton>button:hover { background-color: #1D4ED8 !important; transform: translateY(-1px); }
     
+    /* Custom button styling for deletion actions to signal warning */
+    .delete-btn>div>button { background-color: #DC2626 !important; color: #FFFFFF !important; }
+    .delete-btn>div>button:hover { background-color: #B91C1C !important; }
+    
     /* Dynamic Tabs Styling Customization */
     button[data-baseweb="tab"] { color: #64748B !important; font-weight: 600 !important; }
     button[data-baseweb="tab"][aria-selected="true"] { color: #1E3A8A !important; border-bottom-color: #1E3A8A !important; }
@@ -57,6 +61,11 @@ TXT = {
         "tab_receipts": "📋 Receipts Verification Ledger",
         "tab_staff": "👤 Staff Roster Management",
         "create_title": "Create/Register New Staff Profile",
+        "delete_title": "❌ Delete Employee Profile",
+        "delete_select": "Select Employee Profile to Purge:",
+        "delete_btn": "Permanently Remove Account",
+        "delete_success": "✅ Employee profile successfully deleted from ledger registries!",
+        "delete_empty": "No active registered profiles available to remove.",
         "form_user": "Assigned Username (lowercase, no spaces):",
         "form_pass": "Temporary Password:",
         "form_name": "Full Employee Name:",
@@ -106,6 +115,11 @@ TXT = {
         "tab_receipts": "📋 Vérification des reçus",
         "tab_staff": "👤 Gestion du personnel",
         "create_title": "Créer/Enregistrer un nouveau profil d'employé",
+        "delete_title": "❌ Supprimer un profil d'employé",
+        "delete_select": "Sélectionner le profil d'employé à supprimer :",
+        "delete_btn": "Supprimer définitivement le compte",
+        "delete_success": "✅ Le profil de l'employé a été supprimé avec succès des registres !",
+        "delete_empty": "Aucun profil enregistré disponible pour la suppression.",
         "form_user": "Nom d'utilisateur assigné (minuscules, sans espace) :",
         "form_pass": "Mot de passe temporaire :",
         "form_name": "Nom complet de l'employé :",
@@ -227,7 +241,7 @@ if not st.session_state["logged_in"]:
                 else: st.error(active_txt["invalid_pass"])
             else: st.error(active_txt["invalid_user"])
 
-# --- PHASE 2: ADMIN PANEL WITH INTEGRATED TABS ---
+# --- PHASE 2: ADMIN PANEL WITH RECEPTACLE TABS ---
 elif st.session_state["user_role"] == "admin":
     st.sidebar.title("Admin")
     if st.sidebar.button(active_txt["logout"]):
@@ -266,8 +280,9 @@ elif st.session_state["user_role"] == "admin":
         else:
             st.info(active_txt["no_logs"])
             
-    # TAB 2: STAFF ROSTER MANAGEMENT
+    # TAB 2: STAFF ROSTER & MUTATION ACTIONS
     with tab_staff:
+        # Registration Section
         with st.form("create_user_form", clear_on_submit=True):
             st.write(f"#### {active_txt['create_title']}")
             new_user = st.text_input(active_txt["form_user"]).strip().lower()
@@ -296,9 +311,31 @@ elif st.session_state["user_role"] == "admin":
                         st.success(f"{active_txt['success_reg']} {new_name}!")
                         st.rerun()
 
+        # Display Section
         st.write(f"#### {active_txt['roster']}")
         if not users_df.empty:
             st.dataframe(users_df[["EmployeeID", "Name", "Type", "Limit", "Username"]], use_container_width=True)
+            
+            # Deletion Section (Appended cleanly below roster dataframe)
+            st.markdown("---")
+            with st.form("delete_user_form"):
+                st.write(f"#### {active_txt['delete_title']}")
+                user_list = users_df["Username"].tolist()
+                target_user = st.selectbox(active_txt["delete_select"], user_list)
+                
+                # HTML injection block wrapper to apply red warning tone to form push button
+                st.markdown('<div class="delete-btn">', unsafe_allow_html=True)
+                delete_btn = st.form_submit_button(active_txt["delete_btn"])
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                if delete_btn:
+                    users_df = users_df[users_df["Username"] != target_user]
+                    with st.spinner(active_txt["syncing"]):
+                        if save_and_push_to_github(receipts_df, users_df):
+                            st.success(active_txt["delete_success"])
+                            st.rerun()
+        else:
+            st.info(active_txt["delete_empty"])
 
 # --- PHASE 3: EMPLOYEE PORTAL ---
 else:
