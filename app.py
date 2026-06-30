@@ -5,23 +5,25 @@ from datetime import datetime
 from git import Repo
 
 # --- COMPANY BRANDING & CONFIG ---
-st.set_page_config(page_title="OnlySolutions - Uniform Credit Tracker", page_icon="👔", layout="centered")
+st.set_page_config(page_title="Indigo Uniforms Reimbursement Database", page_icon="👔", layout="centered")
 
+# Custom UI styling tailored for Only Solutions Inc.
 st.markdown("""
     <style>
-    .main-title { font-size: 34px; font-weight: bold; color: #1E3A8A; text-align: center; margin-bottom: 5px; }
-    .subtitle { font-size: 18px; color: #4B5563; text-align: center; margin-bottom: 30px; }
+    .main-title { font-size: 32px; font-weight: bold; color: #1E3A8A; text-align: center; margin-bottom: 2px; }
+    .subtitle { font-size: 13px; color: #6B7280; text-align: center; margin-bottom: 35px; letter-spacing: 0.5px; }
     .card { background-color: #F3F4F6; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #1E3A8A; }
+    div[data-testid="stForm"] { border: 1px solid #E5E7EB; border-radius: 10px; padding: 25px; background-color: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">OnlySolutions</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Employee Uniform Credit Portal</div>', unsafe_allow_html=True)
+# Application Branding Headers
+st.markdown('<div class="main-title">Indigo uniforms reimbursement database</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">created by only solutions inc.</div>', unsafe_allow_html=True)
 
 EXCEL_FILE = "database.xlsx"
 
 # --- SECURE ROSTER DATA (Usernames & Passwords) ---
-# Added custom passwords for your employees. Update these as needed!
 EMPLOYEES = {
     "os_john": {"name": "John Doe", "id": "OS001", "type": "Full-Time", "limit": 175.00, "password": "solutions_john2026"},
     "os_jane": {"name": "Jane Smith", "id": "OS002", "type": "Part-Time", "limit": 100.00, "password": "solutions_jane2026"},
@@ -55,7 +57,7 @@ def save_and_push_to_github(updated_df):
             origin = repo.create_remote("origin", authenticated_url)
             
         repo.git.add(EXCEL_FILE)
-        repo.index.commit("Automated database sheet synchronization [OnlySolutions System]")
+        repo.index.commit("Automated database sheet synchronization [Only Solutions System]")
         origin.push("main")
         return True
     except Exception as e:
@@ -95,7 +97,7 @@ else:
     emp_id = emp_info["id"]
     max_limit = emp_info["limit"]
     
-    # Add a Log Out button in the sidebar or top right
+    # Add a Log Out button in the sidebar
     if st.sidebar.button("🚪 Log Out"):
         st.session_state["logged_in"] = False
         st.session_state["username"] = ""
@@ -143,7 +145,7 @@ else:
             elif remaining_credit <= 0:
                 st.error(f"❌ Transaction blocked. Your individual balance limits are currently fully utilized.")
             else:
-                # Allocation clamp validation threshold
+                # Allocation clamp validation threshold (burst control)
                 if receipt_amount > remaining_credit:
                     reimbursed_amount = remaining_credit
                     st.warning(f"⚠️ Limit Warning: This receipt exceeds your coverage balance. "
@@ -165,7 +167,7 @@ else:
                 
                 updated_df = pd.concat([history_df, new_entry], ignore_index=True)
                 
-                with st.spinner("Synchronizing structural secure database with repository..."):
+                with st.spinner("Synchronizing secure database with repository..."):
                     success = save_and_push_to_github(updated_df)
                     if success:
                         st.toast("Excel repository database synced!", icon="💾")
