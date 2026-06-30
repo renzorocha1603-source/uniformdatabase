@@ -7,28 +7,21 @@ from git import Repo
 # --- MODERN WHITE THEME & BRAND STYLING ---
 st.set_page_config(page_title="Indigo Uniforms Reimbursement Database", page_icon="👔", layout="centered")
 
-# CSS to make a crisp, modern, light user interface
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF; }
     h1, h2, h3, h4, h5, h6, p, span, label { color: #1E293B !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     
-    /* Elegant Header Branding Container */
     .header-container { display: flex; align-items: center; justify-content: space-between; padding-bottom: 20px; border-bottom: 2px solid #F1F5F9; margin-bottom: 30px; }
     .main-title { font-size: 26px; font-weight: 700; color: #1E3A8A !important; margin-bottom: 2px; }
     .subtitle { font-size: 12px; color: #94A3B8 !important; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0px; }
     
-    /* Clean Dashboard Cards */
     .metric-card { background: #FFFFFF; padding: 24px; border-radius: 12px; border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; }
-    
-    /* Circular Progress Graphic Styling */
     .circle-container { display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 20px 0; }
     .svg-item { max-width: 160px; margin: 0 auto; }
     
-    /* Native Form Styling overrides */
     div[data-testid="stForm"] { border: 1px solid #E2E8F0 !important; border-radius: 12px !important; padding: 30px !important; background-color: #FFFFFF !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02) !important; }
     
-    /* Clean Minimalist Buttons */
     .stButton>button { background-color: #1E3A8A !important; color: #FFFFFF !important; border-radius: 6px !important; border: none !important; transition: all 0.2s ease; }
     .stButton>button:hover { background-color: #1D4ED8 !important; transform: translateY(-1px); }
     </style>
@@ -39,14 +32,12 @@ LOGO_URL = "https://i.ibb.co/mVRXHXpx/indigo-park-canada-logo.jpg"
 if "lang" not in st.session_state:
     st.session_state["lang"] = "Français"
 
-# --- RENDER TOP HEADER BLOCK ---
 st.markdown('<div class="header-container">', unsafe_allow_html=True)
 col_logo, col_titles, col_lang = st.columns([1, 4, 1.5])
 
 with col_logo:
     st.image(LOGO_URL, use_container_width=True)
 
-# Definition of Bilingual Translation Dictionaries
 TXT = {
     "English": {
         "title": "Indigo Uniforms Reimbursement Database",
@@ -71,7 +62,9 @@ TXT = {
         "err_conflict": "❌ Account profile username conflict encountered.",
         "success_reg": "✅ Secure profile successfully mapped for",
         "roster": "Active Registered Staff Roster",
-        "claims_ledger": "📋 Global Employee Receipts Log (For Verification Check)",
+        "claims_ledger": "📋 Global Employee Receipts Log (Interactive Check-off)",
+        "save_status_btn": "💾 Save Verification Changes",
+        "status_success": "✅ Receipt verification status updated and synced to GitHub!",
         "welcome": "Welcome back",
         "emp_code": "Employee ID:",
         "status_assign": "Status Assignment:",
@@ -116,7 +109,9 @@ TXT = {
         "err_conflict": "❌ Conflit de nom d'utilisateur rencontré.",
         "success_reg": "✅ Profil de compte sécurisé configuré avec succès pour",
         "roster": "Roster du personnel actif enregistré",
-        "claims_ledger": "📋 Registre global des reçus d'employés (Pour vérification)",
+        "claims_ledger": "📋 Registre global des reçus (Cochez pour confirmer le remboursement)",
+        "save_status_btn": "💾 Sauvegarder les vérifications",
+        "status_success": "✅ Statut de vérification mis à jour et synchronisé sur GitHub !",
         "welcome": "Bon retour",
         "emp_code": "ID de l'employé :",
         "status_assign": "Statut d'emploi :",
@@ -157,13 +152,20 @@ EXCEL_FILE = "database.xlsx"
 
 def load_database():
     if os.path.exists(EXCEL_FILE):
-        try: receipts_df = pd.read_excel(EXCEL_FILE, sheet_name="receipts")
-        except: receipts_df = pd.DataFrame(columns=["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount"])
+        try: 
+            receipts_df = pd.read_excel(EXCEL_FILE, sheet_name="receipts")
+            if "Reimbursed" not in receipts_df.columns:
+                receipts_df["Reimbursed"] = False
+        except: 
+            receipts_df = pd.DataFrame(columns=["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"])
         try: users_df = pd.read_excel(EXCEL_FILE, sheet_name="users")
         except: users_df = pd.DataFrame(columns=["Username", "Password", "Name", "EmployeeID", "Type", "Limit"])
     else:
-        receipts_df = pd.DataFrame(columns=["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount"])
+        receipts_df = pd.DataFrame(columns=["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"])
         users_df = pd.DataFrame(columns=["Username", "Password", "Name", "EmployeeID", "Type", "Limit"])
+    
+    # Ensure boolean structure
+    receipts_df["Reimbursed"] = receipts_df["Reimbursed"].astype(bool)
     return receipts_df, users_df
 
 def save_and_push_to_github(receipts_df, users_df):
@@ -216,7 +218,7 @@ if not st.session_state["logged_in"]:
                 else: st.error(active_txt["invalid_pass"])
             else: st.error(active_txt["invalid_user"])
 
-# --- PHASE 2: ADMIN PANEL (Check logs to corroborate user requests) ---
+# --- PHASE 2: ADMIN PANEL (With Checkbox Processing Row) ---
 elif st.session_state["user_role"] == "admin":
     st.sidebar.title("Admin")
     if st.sidebar.button(active_txt["logout"]):
@@ -224,6 +226,36 @@ elif st.session_state["user_role"] == "admin":
         st.rerun()
         
     st.write(f"### {active_txt['admin_title']}")
+    
+    # Global Verification Module
+    st.write(f"#### {active_txt['claims_ledger']}")
+    if not receipts_df.empty:
+        # Display editable table specifically configuration checking the boolean tracking rows
+        edited_df = st.data_editor(
+            receipts_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
+            column_config={
+                "Reimbursed": st.column_config.CheckboxColumn(
+                    "Reimbursed (OK)",
+                    help="Check this once finance pays out or verifies the receipt manual submission.",
+                    default=False,
+                )
+            },
+            disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"],
+            use_container_width=True,
+            key="admin_editor"
+        )
+        
+        # Check if the admin changed any checkmarks
+        if not edited_df["Reimbursed"].equals(receipts_df["Reimbursed"]):
+            if st.button(active_txt["save_status_btn"]):
+                receipts_df["Reimbursed"] = edited_df["Reimbursed"]
+                with st.spinner(active_txt["syncing"]):
+                    if save_and_push_to_github(receipts_df, users_df):
+                        st.success(active_txt["status_success"])
+                        st.rerun()
+    else:
+        st.info(active_txt["no_logs"])
+
     with st.form("create_user_form", clear_on_submit=True):
         st.write(f"#### {active_txt['create_title']}")
         new_user = st.text_input(active_txt["form_user"]).strip().lower()
@@ -237,7 +269,7 @@ elif st.session_state["user_role"] == "admin":
         
         if create_btn:
             if not (new_user and new_pass and new_name and new_id):
-                st.error(active_txt["err_fields"])
+                st.error(active_fields)
             elif not users_df.empty and new_user in users_df["Username"].values:
                 st.error(active_txt["err_conflict"])
             else:
@@ -251,13 +283,6 @@ elif st.session_state["user_role"] == "admin":
                 if save_and_push_to_github(receipts_df, users_df):
                     st.success(f"{active_txt['success_reg']} {new_name}!")
                     st.rerun()
-
-    # Admin verification tool: Check global receipts log
-    st.write(f"#### {active_txt['claims_ledger']}")
-    if not receipts_df.empty:
-        st.dataframe(receipts_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"]], use_container_width=True)
-    else:
-        st.info(active_txt["no_logs"])
 
     st.write(f"#### {active_txt['roster']}")
     if not users_df.empty:
@@ -282,12 +307,10 @@ else:
         
     remaining_credit = max_limit - total_spent
     
-    # Calculate circle percentage parameters (capped at 100)
     percentage = (total_spent / max_limit) * 100 if max_limit > 0 else 0
     percentage = min(percentage, 100)
     stroke_dasharray = f"{percentage}, 100"
 
-    # Layout structure split: Metrics Profile Details Left, Circle Graphic Right
     col_info, col_graphic = st.columns([1.8, 1.2])
     
     with col_info:
@@ -306,7 +329,6 @@ else:
         """, unsafe_allow_html=True)
         
     with col_graphic:
-        # Inline injection of vector circle tracker
         st.markdown(f"""
         <div class="metric-card circle-container">
             <svg viewBox="0 0 36 36" class="svg-item">
@@ -340,7 +362,7 @@ else:
                 new_receipt = pd.DataFrame([{
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "EmployeeID": str(emp_id),
                     "Name": user_record["Name"], "Type": user_record["Type"], "Store": store_name,
-                    "ReceiptAmount": receipt_amount, "ReimbursedAmount": reimbursed_amount
+                    "ReceiptAmount": receipt_amount, "ReimbursedAmount": reimbursed_amount, "Reimbursed": False
                 }])
                 receipts_df = pd.concat([receipts_df, new_receipt], ignore_index=True)
                 
@@ -352,6 +374,6 @@ else:
     if not receipts_df.empty:
         personal_logs = receipts_df[receipts_df["EmployeeID"] == str(emp_id)]
         if not personal_logs.empty:
-            st.dataframe(personal_logs[["Timestamp", "Store", "ReceiptAmount", "ReimbursedAmount"]], use_container_width=True)
+            st.dataframe(personal_logs[["Timestamp", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]], use_container_width=True)
         else: st.info(active_txt["no_logs"])
     else: st.info(active_txt["no_logs"])
