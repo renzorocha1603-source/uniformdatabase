@@ -279,8 +279,8 @@ elif st.session_state["user_role"] == "admin":
     
     # TAB 1: RECEIPTS AUDIT LOG
     with tab_receipts:
-        pending_df = receipts_df[receipts_df["Reimbursed"] == False]
-        processed_df = receipts_df[receipts_df["Reimbursed"] == True]
+        pending_df = receipts_df[receipts_df["Reimbursed"] == False].reset_index(drop=True)
+        processed_df = receipts_df[receipts_df["Reimbursed"] == True].reset_index(drop=True)
         
         selected_image_str = ""
         
@@ -301,7 +301,7 @@ elif st.session_state["user_role"] == "admin":
                 key="admin_pending_editor"
             )
             
-            # Extract Image for row clicked inside Pending Data Editor
+            # Extract Image for row clicked inside Pending Data Editor safely
             if st.session_state.get("admin_pending_editor") and "last_selected_rows" in st.session_state["admin_pending_editor"]:
                 selected_indices = st.session_state["admin_pending_editor"]["last_selected_rows"]
                 if selected_indices:
@@ -311,7 +311,14 @@ elif st.session_state["user_role"] == "admin":
             
             if not edited_pending["Reimbursed"].equals(pending_df["Reimbursed"]):
                 if st.button(active_txt["save_status_btn"], key="save_pending_btn"):
-                    receipts_df.loc[receipts_df["Reimbursed"] == False, "Reimbursed"] = edited_pending["Reimbursed"]
+                    # Match by unique characteristics since indices shifted during slice filtering
+                    for idx, row in edited_pending.iterrows():
+                        if row["Reimbursed"] == True:
+                            receipts_df.loc[
+                                (receipts_df["Timestamp"] == row["Timestamp"]) & 
+                                (receipts_df["EmployeeID"] == row["EmployeeID"]), "Reimbursed"
+                            ] = True
+                            
                     with st.spinner(active_txt["syncing"]):
                         res = save_and_push_to_github(receipts_df, users_df)
                         if res["success"]:
@@ -327,21 +334,21 @@ elif st.session_state["user_role"] == "admin":
         # SECTION 2: ARCHIVED/PROCESSED RECEIPTS
         st.write(f"#### {active_txt['processed_ledger']}")
         if not processed_df.empty:
-            processed_selection = st.dataframe(
+            # We use a completely read-only stable editor block here to prevent environment version exceptions
+            edited_processed = st.data_editor(
                 processed_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
+                disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"],
                 use_container_width=True,
-                on_select="rerun",
-                selection_mode="single_row",
-                key="admin_processed_viewer"
+                key="admin_processed_editor"
             )
             
-            # Extract Image for row clicked inside Processed Dataframe
-            if st.session_state.get("admin_processed_viewer") and "selection" in st.session_state["admin_processed_viewer"]:
-                selected_rows_list = st.session_state["admin_processed_viewer"]["selection"]["rows"]
-                if selected_rows_list:
-                    chosen_row_idx = selected_rows_list[0]
-                    if chosen_row_idx < len(processed_df):
-                        selected_image_str = processed_df.iloc[chosen_row_idx]["ReceiptImage"]
+            # Extract Image for row clicked inside Processed Data Editor safely
+            if st.session_state.get("admin_processed_editor") and "last_selected_rows" in st.session_state["admin_processed_editor"]:
+                selected_proc_indices = st.session_state["admin_processed_editor"]["last_selected_rows"]
+                if selected_proc_indices:
+                    chosen_proc_idx = selected_proc_indices[0]
+                    if chosen_proc_idx < len(processed_df):
+                        selected_image_str = processed_df.iloc[chosen_proc_idx]["ReceiptImage"]
         else:
             st.info(active_txt["no_processed"])
             
@@ -490,7 +497,6 @@ else:
                     reimbursed_amount = receipt_amount
                     st.success(f"{active_txt['success_claim']} **${reimbursed_amount:.2f}**.")
                 
-                # Convert the image file bytes into a clean string layout for standard column packaging
                 base64_image_encoded = base64.b64encode(uploaded_file.read()).decode("utf-8")
                 
                 new_receipt = pd.DataFrame([{
