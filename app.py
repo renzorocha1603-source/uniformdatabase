@@ -77,7 +77,8 @@ TXT = {
         "err_conflict": "❌ Account profile username conflict encountered.",
         "success_reg": "✅ Secure profile successfully mapped for",
         "roster": "Active Registered Staff Roster",
-        "claims_ledger": "Global Employee Receipts Log (Interactive Check-off)",
+        "pending_ledger": "⏳ Pending Audit Review (Action Required)",
+        "processed_ledger": "✅ Fully Processed & Reimbursed Archive",
         "save_status_btn": "💾 Save Verification Changes",
         "status_success": "✅ Receipt verification status updated and synced to GitHub!",
         "welcome": "Welcome back",
@@ -98,6 +99,8 @@ TXT = {
         "success_claim": "✅ Receipt logged in system database. Approved system validation amount:",
         "ledger_title": "### 📜 Your Registered Receipts Ledger",
         "no_logs": "No recorded receipts linked to this profile index.",
+        "no_pending": "No pending items requiring administrative audit review.",
+        "no_processed": "No receipts have been processed or marked as reimbursed yet.",
         "syncing": "Writing transaction data securely to ledger...",
         "chart_label": "Used of Limit"
     },
@@ -131,7 +134,8 @@ TXT = {
         "err_conflict": "❌ Conflit de nom d'utilisateur rencontré.",
         "success_reg": "✅ Profil de compte sécurisé configuré avec succès pour",
         "roster": "Roster du personnel actif enregistré",
-        "claims_ledger": "Registre global des reçus (Cochez pour confirmer le remboursement)",
+        "pending_ledger": "⏳ En attente de vérification (Action requise)",
+        "processed_ledger": "✅ Archive des reçus traités et remboursés",
         "save_status_btn": "💾 Sauvegarder les vérifications",
         "status_success": "✅ Statut de vérification mis à jour et synchronisé sur GitHub !",
         "welcome": "Bon retour",
@@ -152,6 +156,8 @@ TXT = {
         "success_claim": "✅ Reçu enregistré dans la base de données. Montant approuvé pour corroboration :",
         "ledger_title": "### 📜 Historique de vos reçus enregistrés",
         "no_logs": "Aucune transaction enregistrée liée à ce profil.",
+        "no_pending": "Aucun reçu en attente d'approbation pour le moment.",
+        "no_processed": "Aucun reçu n'a encore été marqué comme remboursé.",
         "syncing": "Écriture sécurisée des données dans le registre...",
         "chart_label": "Utilisé de la limite"
     }
@@ -205,19 +211,20 @@ def save_and_push_to_github(receipts_df, users_df):
     try:
         token = st.secrets["github"]["token"]
         repo_url = st.secrets["github"]["repo_url"]
-        
         authenticated_url = repo_url.replace("https://", f"https://oauth2:{token}@")
+        
         repo = Repo(".")
+        repo.git.checkout('main')
+        
         try: origin = repo.remote(name="origin"); origin.set_url(authenticated_url)
         except: origin = repo.create_remote("origin", authenticated_url)
         
         repo.git.add(EXCEL_FILE)
         repo.index.commit("Automated secure database update [Only Solutions System]")
         origin.push("main")
-        return True
+        return {"success": True, "error": None}
     except Exception as e:
-        st.error(f"GitHub Repository Write Failure: {e}")
-        return False
+        return {"success": False, "error": str(e)}
 
 receipts_df, users_df = load_database()
 active_txt = TXT[st.session_state["lang"]]
@@ -263,10 +270,15 @@ elif st.session_state["user_role"] == "admin":
     
     # TAB 1: RECEIPTS AUDIT LOG
     with tab_receipts:
-        st.write(f"#### {active_txt['claims_ledger']}")
-        if not receipts_df.empty:
-            edited_df = st.data_editor(
-                receipts_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
+        # Split DataFrames into unchecked (Pending) and checked (Processed)
+        pending_df = receipts_df[receipts_df["Reimbursed"] == False]
+        processed_df = receipts_df[receipts_df["Reimbursed"] == True]
+        
+        # SECTION 1: PENDING RECEIPTS FOR REVIEW
+        st.write(f"#### {active_txt['pending_ledger']}")
+        if not pending_df.empty:
+            edited_pending = st.data_editor(
+                pending_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
                 column_config={
                     "Reimbursed": st.column_config.CheckboxColumn(
                         "Reimbursed (OK)",
@@ -276,25 +288,42 @@ elif st.session_state["user_role"] == "admin":
                 },
                 disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"],
                 use_container_width=True,
-                key="admin_editor"
+                key="admin_pending_editor"
             )
             
-            if not edited_df["Reimbursed"].equals(receipts_df["Reimbursed"]):
+            # Check if admin updated any checkboxes
+            if not edited_pending["Reimbursed"].equals(pending_df["Reimbursed"]):
                 if st.button(active_txt["save_status_btn"]):
-                    receipts_df["Reimbursed"] = edited_df["Reimbursed"]
+                    # Merge changes back into the master table
+                    receipts_df.loc[receipts_df["Reimbursed"] == False, "Reimbursed"] = edited_pending["Reimbursed"]
                     with st.spinner(active_txt["syncing"]):
-                        if save_and_push_to_github(receipts_df, users_df):
+                        res = save_and_push_to_github(receipts_df, users_df)
+                        if res["success"]:
                             st.success(active_txt["status_success"])
                             st.rerun()
+                        else:
+                            st.error(f"❌ GitHub Sync Blocked: {res['error']}")
         else:
-            st.info(active_txt["no_logs"])
+            st.info(active_txt["no_pending"])
+            
+        st.markdown("---")
+        
+        # SECTION 2: ARCHIVED/PROCESSED RECEIPTS
+        st.write(f"#### {active_txt['processed_ledger']}")
+        if not processed_df.empty:
+            st.dataframe(
+                processed_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
+                use_container_width=True
+            )
+        else:
+            st.info(active_txt["no_processed"])
             
     # TAB 2: STAFF ROSTER & MUTATION ACTIONS
     with tab_staff:
         with st.form("create_user_form", clear_on_submit=True):
             st.write(f"#### {active_txt['create_title']}")
             new_user = st.text_input(active_txt["form_user"]).strip().lower()
-            new_pass = st.text_input(active_txt["form_pass"], type="password").strip()
+            new_pass = st.text_input(active_txt["form_pass"]).strip()
             new_name = st.text_input(active_txt["form_name"]).strip()
             new_id = st.text_input(active_txt["form_id"]).strip().upper()
             
@@ -314,10 +343,15 @@ elif st.session_state["user_role"] == "admin":
                         "Username": new_user, "Password": new_pass, "Name": new_name,
                         "EmployeeID": new_id, "Type": db_type_string, "Limit": limit_allocation
                     }])
-                    users_df = pd.concat([users_df, new_profile], ignore_index=True)
-                    if save_and_push_to_github(receipts_df, users_df):
-                        st.success(f"{active_txt['success_reg']} {new_name}!")
-                        st.rerun()
+                    updated_users = pd.concat([users_df, new_profile], ignore_index=True)
+                    
+                    with st.spinner(active_txt["syncing"]):
+                        res = save_and_push_to_github(receipts_df, updated_users)
+                        if res["success"]:
+                            st.success(f"{active_txt['success_reg']} {new_name}!")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Register Failed! GitHub rejected spreadsheet push: {res['error']}")
 
         st.write(f"#### {active_txt['roster']}")
         if not users_df.empty:
@@ -334,11 +368,14 @@ elif st.session_state["user_role"] == "admin":
                 st.markdown('</div>', unsafe_allow_html=True)
                 
                 if delete_btn:
-                    users_df = users_df[users_df["Username"] != target_user]
+                    updated_users = users_df[users_df["Username"] != target_user]
                     with st.spinner(active_txt["syncing"]):
-                        if save_and_push_to_github(receipts_df, users_df):
+                        res = save_and_push_to_github(receipts_df, updated_users)
+                        if res["success"]:
                             st.success(active_txt["delete_success"])
                             st.rerun()
+                        else:
+                            st.error(f"❌ Delete Failed! GitHub rejected spreadsheet push: {res['error']}")
         else:
             st.info(active_txt["delete_empty"])
 
@@ -418,11 +455,14 @@ else:
                     "Name": user_record["Name"], "Type": user_record["Type"], "Store": store_name,
                     "ReceiptAmount": receipt_amount, "ReimbursedAmount": reimbursed_amount, "Reimbursed": False
                 }])
-                receipts_df = pd.concat([receipts_df, new_receipt], ignore_index=True)
+                updated_receipts = pd.concat([receipts_df, new_receipt], ignore_index=True)
                 
                 with st.spinner(active_txt["syncing"]):
-                    if save_and_push_to_github(receipts_df, users_df):
+                    res = save_and_push_to_github(updated_receipts, users_df)
+                    if res["success"]:
                         st.rerun()
+                    else:
+                        st.error(f"❌ Submission Failed! GitHub rejected spreadsheet push: {res['error']}")
 
     st.write(active_txt["ledger_title"])
     if not receipts_df.empty:
