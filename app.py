@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import base64
 from datetime import datetime
 from git import Repo
 
@@ -102,7 +103,10 @@ TXT = {
         "no_pending": "No pending items requiring administrative audit review.",
         "no_processed": "No receipts have been processed or marked as reimbursed yet.",
         "syncing": "Writing transaction data securely to ledger...",
-        "chart_label": "Used of Limit"
+        "chart_label": "Used of Limit",
+        "img_preview_title": "🔍 Selected Receipt Image Preview",
+        "img_preview_instruction": "💡 Click on any row header in the tables above to load and corroborate its original uploaded receipt image below.",
+        "img_preview_empty": "No receipt image attached to this transaction entry."
     },
     "Français": {
         "title": "Base de données de remboursement des uniformes Indigo",
@@ -159,7 +163,10 @@ TXT = {
         "no_pending": "Aucun reçu en attente d'approbation pour le moment.",
         "no_processed": "Aucun reçu n'a encore été marqué comme remboursé.",
         "syncing": "Écriture sécurisée des données dans le registre...",
-        "chart_label": "Utilisé de la limite"
+        "chart_label": "Utilisé de la limite",
+        "img_preview_title": "🔍 Aperçu de la photo du reçu sélectionné",
+        "img_preview_instruction": "💡 Cliquez sur l'en-tête de n'importe quelle ligne dans les tableaux ci-dessus pour charger et corroborer la photo du reçu original ci-dessous.",
+        "img_preview_empty": "Aucune image de reçu attachée à cette transaction."
     }
 }
 
@@ -179,14 +186,15 @@ st.markdown('</div>', unsafe_allow_html=True)
 EXCEL_FILE = "database.xlsx"
 
 def load_database():
-    req_receipts = ["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]
+    req_receipts = ["Timestamp", "EmployeeID", "Name", "Type", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed", "ReceiptImage"]
     req_users = ["Username", "Password", "Name", "EmployeeID", "Type", "Limit"]
     
     if os.path.exists(EXCEL_FILE):
         try: 
             receipts_df = pd.read_excel(EXCEL_FILE, sheet_name="receipts")
             for col in req_receipts:
-                if col not in receipts_df.columns: receipts_df[col] = False if col == "Reimbursed" else ""
+                if col not in receipts_df.columns: 
+                    receipts_df[col] = False if col == "Reimbursed" else ""
         except: 
             receipts_df = pd.DataFrame(columns=req_receipts)
             
@@ -201,6 +209,7 @@ def load_database():
         users_df = pd.DataFrame(columns=req_users)
     
     receipts_df["Reimbursed"] = receipts_df["Reimbursed"].astype(bool)
+    receipts_df["ReceiptImage"] = receipts_df["ReceiptImage"].fillna("").astype(str)
     users_df["Username"] = users_df["Username"].astype(str).str.strip().str.lower()
     return receipts_df, users_df
 
@@ -270,9 +279,10 @@ elif st.session_state["user_role"] == "admin":
     
     # TAB 1: RECEIPTS AUDIT LOG
     with tab_receipts:
-        # Split DataFrames into unchecked (Pending) and checked (Processed)
         pending_df = receipts_df[receipts_df["Reimbursed"] == False]
         processed_df = receipts_df[receipts_df["Reimbursed"] == True]
+        
+        selected_image_str = ""
         
         # SECTION 1: PENDING RECEIPTS FOR REVIEW
         st.write(f"#### {active_txt['pending_ledger']}")
@@ -291,10 +301,16 @@ elif st.session_state["user_role"] == "admin":
                 key="admin_pending_editor"
             )
             
-            # Check if admin updated any checkboxes
+            # Extract Image for row clicked inside Pending Data Editor
+            if st.session_state.get("admin_pending_editor") and "last_selected_rows" in st.session_state["admin_pending_editor"]:
+                selected_indices = st.session_state["admin_pending_editor"]["last_selected_rows"]
+                if selected_indices:
+                    chosen_row_idx = selected_indices[0]
+                    if chosen_row_idx < len(pending_df):
+                        selected_image_str = pending_df.iloc[chosen_row_idx]["ReceiptImage"]
+            
             if not edited_pending["Reimbursed"].equals(pending_df["Reimbursed"]):
-                if st.button(active_txt["save_status_btn"]):
-                    # Merge changes back into the master table
+                if st.button(active_txt["save_status_btn"], key="save_pending_btn"):
                     receipts_df.loc[receipts_df["Reimbursed"] == False, "Reimbursed"] = edited_pending["Reimbursed"]
                     with st.spinner(active_txt["syncing"]):
                         res = save_and_push_to_github(receipts_df, users_df)
@@ -311,12 +327,36 @@ elif st.session_state["user_role"] == "admin":
         # SECTION 2: ARCHIVED/PROCESSED RECEIPTS
         st.write(f"#### {active_txt['processed_ledger']}")
         if not processed_df.empty:
-            st.dataframe(
+            processed_selection = st.dataframe(
                 processed_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
-                use_container_width=True
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="single_row",
+                key="admin_processed_viewer"
             )
+            
+            # Extract Image for row clicked inside Processed Dataframe
+            if st.session_state.get("admin_processed_viewer") and "selection" in st.session_state["admin_processed_viewer"]:
+                selected_rows_list = st.session_state["admin_processed_viewer"]["selection"]["rows"]
+                if selected_rows_list:
+                    chosen_row_idx = selected_rows_list[0]
+                    if chosen_row_idx < len(processed_df):
+                        selected_image_str = processed_df.iloc[chosen_row_idx]["ReceiptImage"]
         else:
             st.info(active_txt["no_processed"])
+            
+        st.markdown("---")
+        
+        # SECTION 3: DYNAMIC ASSURANCE PREVIEWER PANEL
+        st.write(f"#### {active_txt['img_preview_title']}")
+        if selected_image_str and selected_image_str.strip() != "":
+            try:
+                img_bytes = base64.b64decode(selected_image_str)
+                st.image(img_bytes, use_container_width=True)
+            except:
+                st.error(active_txt["img_preview_empty"])
+        else:
+            st.info(active_txt["img_preview_instruction"])
             
     # TAB 2: STAFF ROSTER & MUTATION ACTIONS
     with tab_staff:
@@ -450,10 +490,14 @@ else:
                     reimbursed_amount = receipt_amount
                     st.success(f"{active_txt['success_claim']} **${reimbursed_amount:.2f}**.")
                 
+                # Convert the image file bytes into a clean string layout for standard column packaging
+                base64_image_encoded = base64.b64encode(uploaded_file.read()).decode("utf-8")
+                
                 new_receipt = pd.DataFrame([{
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "EmployeeID": str(emp_id),
                     "Name": user_record["Name"], "Type": user_record["Type"], "Store": store_name,
-                    "ReceiptAmount": receipt_amount, "ReimbursedAmount": reimbursed_amount, "Reimbursed": False
+                    "ReceiptAmount": receipt_amount, "ReimbursedAmount": reimbursed_amount, 
+                    "Reimbursed": False, "ReceiptImage": base64_image_encoded
                 }])
                 updated_receipts = pd.concat([receipts_df, new_receipt], ignore_index=True)
                 
