@@ -104,9 +104,10 @@ TXT = {
         "no_processed": "No receipts have been processed or marked as reimbursed yet.",
         "syncing": "Writing transaction data securely to ledger...",
         "chart_label": "Used of Limit",
-        "img_preview_title": "🔍 Selected Receipt Image Preview",
-        "img_preview_instruction": "💡 Click on any row header in the tables above to load and corroborate its original uploaded receipt image below.",
-        "img_preview_empty": "No receipt image attached to this transaction entry."
+        "img_preview_title": "🔍 Secure Receipt Image Preview Console",
+        "img_preview_instruction": "Select a receipt record index to pull its validation image copy:",
+        "img_preview_empty": "No transaction image payload exists for this index profile.",
+        "no_any_receipts": "No transactions have been recorded in the system yet."
     },
     "Français": {
         "title": "Base de données de remboursement des uniformes Indigo",
@@ -164,9 +165,10 @@ TXT = {
         "no_processed": "Aucun reçu n'a encore été marqué comme remboursé.",
         "syncing": "Écriture sécurisée des données dans le registre...",
         "chart_label": "Utilisé de la limite",
-        "img_preview_title": "🔍 Aperçu de la photo du reçu sélectionné",
-        "img_preview_instruction": "💡 Cliquez sur l'en-tête de n'importe quelle ligne dans les tableaux ci-dessus pour charger et corroborer la photo du reçu original ci-dessous.",
-        "img_preview_empty": "Aucune image de reçu attachée à cette transaction."
+        "img_preview_title": "🔍 Console d'aperçu de la photo du reçu",
+        "img_preview_instruction": "Sélectionnez une transaction pour charger sa pièce jointe correspondante :",
+        "img_preview_empty": "Aucune image de reçu attachée à cette transaction.",
+        "no_any_receipts": "Aucun reçu n'a été enregistré dans le système pour le moment."
     }
 }
 
@@ -282,8 +284,6 @@ elif st.session_state["user_role"] == "admin":
         pending_df = receipts_df[receipts_df["Reimbursed"] == False].reset_index(drop=True)
         processed_df = receipts_df[receipts_df["Reimbursed"] == True].reset_index(drop=True)
         
-        selected_image_str = ""
-        
         # SECTION 1: PENDING RECEIPTS FOR REVIEW
         st.write(f"#### {active_txt['pending_ledger']}")
         if not pending_df.empty:
@@ -292,26 +292,16 @@ elif st.session_state["user_role"] == "admin":
                 column_config={
                     "Reimbursed": st.column_config.CheckboxColumn(
                         "Reimbursed (OK)",
-                        help="Check this once finance pays out or verifies the receipt manual submission.",
                         default=False,
                     )
                 },
                 disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"],
                 use_container_width=True,
-                key="admin_pending_editor"
+                key="admin_pending_editor_v2"
             )
-            
-            # Extract Image for row clicked inside Pending Data Editor safely
-            if st.session_state.get("admin_pending_editor") and "last_selected_rows" in st.session_state["admin_pending_editor"]:
-                selected_indices = st.session_state["admin_pending_editor"]["last_selected_rows"]
-                if selected_indices:
-                    chosen_row_idx = selected_indices[0]
-                    if chosen_row_idx < len(pending_df):
-                        selected_image_str = pending_df.iloc[chosen_row_idx]["ReceiptImage"]
             
             if not edited_pending["Reimbursed"].equals(pending_df["Reimbursed"]):
                 if st.button(active_txt["save_status_btn"], key="save_pending_btn"):
-                    # Match by unique characteristics since indices shifted during slice filtering
                     for idx, row in edited_pending.iterrows():
                         if row["Reimbursed"] == True:
                             receipts_df.loc[
@@ -334,36 +324,40 @@ elif st.session_state["user_role"] == "admin":
         # SECTION 2: ARCHIVED/PROCESSED RECEIPTS
         st.write(f"#### {active_txt['processed_ledger']}")
         if not processed_df.empty:
-            # We use a completely read-only stable editor block here to prevent environment version exceptions
-            edited_processed = st.data_editor(
+            st.data_editor(
                 processed_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
                 disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"],
                 use_container_width=True,
-                key="admin_processed_editor"
+                key="admin_processed_editor_v2"
             )
-            
-            # Extract Image for row clicked inside Processed Data Editor safely
-            if st.session_state.get("admin_processed_editor") and "last_selected_rows" in st.session_state["admin_processed_editor"]:
-                selected_proc_indices = st.session_state["admin_processed_editor"]["last_selected_rows"]
-                if selected_proc_indices:
-                    chosen_proc_idx = selected_proc_indices[0]
-                    if chosen_proc_idx < len(processed_df):
-                        selected_image_str = processed_df.iloc[chosen_proc_idx]["ReceiptImage"]
         else:
             st.info(active_txt["no_processed"])
             
         st.markdown("---")
         
-        # SECTION 3: DYNAMIC ASSURANCE PREVIEWER PANEL
+        # SECTION 3: BULLETPROOF SELECTBOX PREVIEWER PANEL
         st.write(f"#### {active_txt['img_preview_title']}")
-        if selected_image_str and selected_image_str.strip() != "":
-            try:
-                img_bytes = base64.b64decode(selected_image_str)
-                st.image(img_bytes, use_container_width=True)
-            except:
-                st.error(active_txt["img_preview_empty"])
+        if not receipts_df.empty:
+            # Build clean drop-down labels: "Name - Store ($Amount) [Timestamp]"
+            receipts_df["DropdownLabel"] = receipts_df["Name"] + " - " + receipts_df["Store"] + " ($" + receipts_df["ReceiptAmount"].astype(str) + ") [" + receipts_df["Timestamp"] + "]"
+            label_options = receipts_df["DropdownLabel"].tolist()
+            
+            selected_label = st.selectbox(active_txt["img_preview_instruction"], label_options, index=0)
+            
+            if selected_label:
+                matched_row = receipts_df[receipts_df["DropdownLabel"] == selected_label].iloc[0]
+                selected_image_str = matched_row["ReceiptImage"]
+                
+                if selected_image_str and selected_image_str.strip() != "":
+                    try:
+                        img_bytes = base64.b64decode(selected_image_str)
+                        st.image(img_bytes, use_container_width=True)
+                    except:
+                        st.error(active_txt["img_preview_empty"])
+                else:
+                    st.error(active_txt["img_preview_empty"])
         else:
-            st.info(active_txt["img_preview_instruction"])
+            st.info(active_txt["no_any_receipts"])
             
     # TAB 2: STAFF ROSTER & MUTATION ACTIONS
     with tab_staff:
