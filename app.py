@@ -62,8 +62,8 @@ TXT = {
         "tab_receipts": "📋 Receipts Verification Ledger",
         "tab_staff": "👤 Staff Roster Management",
         "create_title": "Create/Register New Staff Profile",
-        "delete_title": "❌ Delete Employee Profile",
-        "delete_select": "Select Employee Profile to Purge:",
+        "delete_title": "❌ Danger Zone: Purge Employee Profile",
+        "delete_select": "Select Employee Profile to Audit / Remove:",
         "delete_btn": "Permanently Remove Account",
         "delete_success": "✅ Employee profile successfully deleted from ledger registries!",
         "delete_empty": "No active registered profiles available to remove.",
@@ -109,7 +109,10 @@ TXT = {
         "img_preview_empty": "No transaction image payload exists for this index profile.",
         "no_any_receipts": "No transactions have been recorded in the system yet.",
         "delete_tx_btn": "❌ Permanently Delete This Transaction Entry",
-        "delete_tx_success": "✅ Transaction successfully purged from database and synced to GitHub!"
+        "delete_tx_success": "✅ Transaction successfully purged from database and synced to GitHub!",
+        "search_staff_placeholder": "🔍 Search staff by name, ID or username...",
+        "balance_audit_title": "📊 Real-Time Financial Balance Tracker",
+        "balance_audit_loading": "Select a profile below to audit balance allocations."
     },
     "Français": {
         "title": "Base de données de remboursement des uniformes Indigo",
@@ -125,8 +128,8 @@ TXT = {
         "tab_receipts": "📋 Vérification des reçus",
         "tab_staff": "👤 Gestion du personnel",
         "create_title": "Créer/Enregistrer un nouveau profil d'employé",
-        "delete_title": "❌ Supprimer un profil d'employé",
-        "delete_select": "Sélectionner le profil d'employé à supprimer :",
+        "delete_title": "❌ Zone de danger : Supprimer un profil d'employé",
+        "delete_select": "Sélectionner le profil d'employé à analyser / supprimer :",
         "delete_btn": "Supprimer définitivement le compte",
         "delete_success": "✅ Le profil de l'employé a été supprimé avec succès des registres !",
         "delete_empty": "Aucun profil enregistré disponible pour la suppression.",
@@ -172,7 +175,10 @@ TXT = {
         "img_preview_empty": "Aucune image de reçu attachée à cette transaction.",
         "no_any_receipts": "Aucun reçu n'a été enregistré dans le système pour le moment.",
         "delete_tx_btn": "❌ Supprimer définitivement cette transaction",
-        "delete_tx_success": "✅ Transaction supprimée avec succès du registre et synchronisée sur GitHub !"
+        "delete_tx_success": "✅ Transaction supprimée avec succès du registre et synchronisée sur GitHub !",
+        "search_staff_placeholder": "🔍 Rechercher un employé par nom, ID ou identifiant...",
+        "balance_audit_title": "📊 Suivi budgétaire en temps réel de l'employé",
+        "balance_audit_loading": "Sélectionnez un profil ci-dessous pour voir ses allocations."
     }
 }
 
@@ -301,7 +307,7 @@ elif st.session_state["user_role"] == "admin":
                 },
                 disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount"],
                 use_container_width=True,
-                key="admin_pending_editor_v3"
+                key="admin_pending_editor_v4"
             )
             
             if not edited_pending["Reimbursed"].equals(pending_df["Reimbursed"]):
@@ -332,7 +338,7 @@ elif st.session_state["user_role"] == "admin":
                 processed_df[["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"]],
                 disabled=["Timestamp", "EmployeeID", "Name", "Store", "ReceiptAmount", "ReimbursedAmount", "Reimbursed"],
                 use_container_width=True,
-                key="admin_processed_editor_v3"
+                key="admin_processed_editor_v4"
             )
         else:
             st.info(active_txt["no_processed"])
@@ -342,7 +348,8 @@ elif st.session_state["user_role"] == "admin":
         # SECTION 3: MANAGEMENT PANEL (PREVIEW + DELETION LOGIC)
         st.write(f"#### {active_txt['img_preview_title']}")
         if not receipts_df.empty:
-            receipts_df["DropdownLabel"] = receipts_df["Name"] + " - " + receipts_df["Store"] + " ($" + receipts_df["ReceiptAmount"].astype(str) + ") [" + receipts_df["Timestamp"] + "]"
+            # Reconstruct list safely with dynamic casting alignment tags
+            receipts_df["DropdownLabel"] = receipts_df["Name"].astype(str) + " - " + receipts_df["Store"].astype(str) + " ($" + receipts_df["ReceiptAmount"].astype(str) + ") [" + receipts_df["Timestamp"].astype(str) + "]"
             label_options = receipts_df["DropdownLabel"].tolist()
             
             col_select, col_delete = st.columns([2.5, 1.5])
@@ -362,13 +369,11 @@ elif st.session_state["user_role"] == "admin":
                     st.markdown('</div>', unsafe_allow_html=True)
                     
                     if delete_tx_clicked:
-                        # Drop row based on exact combination keys
                         updated_receipts_df = receipts_df[~(
                             (receipts_df["Timestamp"] == selected_timestamp) & 
                             (receipts_df["EmployeeID"] == selected_emp_id)
                         )].copy()
                         
-                        # Strip dropdown parsing construction helper row column out before filing to excel
                         if "DropdownLabel" in updated_receipts_df.columns:
                             updated_receipts_df = updated_receipts_df.drop(columns=["DropdownLabel"])
                             
@@ -380,7 +385,6 @@ elif st.session_state["user_role"] == "admin":
                             else:
                                 st.error(f"❌ Deletion failed to push to GitHub registry: {res['error']}")
                 
-                # Render Image underneath actions
                 if selected_image_str and selected_image_str.strip() != "":
                     try:
                         img_bytes = base64.b64decode(selected_image_str)
@@ -392,8 +396,9 @@ elif st.session_state["user_role"] == "admin":
         else:
             st.info(active_txt["no_any_receipts"])
             
-    # TAB 2: STAFF ROSTER & MUTATION ACTIONS
+    # TAB 2: STAFF ROSTER & LIVE ALLOCATION MANAGEMENT
     with tab_staff:
+        # BLOCK 1: CREATE NEW EMPLOYEE PROFILE
         with st.form("create_user_form", clear_on_submit=True):
             st.write(f"#### {active_txt['create_title']}")
             new_user = st.text_input(active_txt["form_user"]).strip().lower()
@@ -425,31 +430,99 @@ elif st.session_state["user_role"] == "admin":
                             st.success(f"{active_txt['success_reg']} {new_name}!")
                             st.rerun()
                         else:
-                            st.error(f"❌ Register Failed! GitHub rejected spreadsheet push: {res['error']}")
+                            st.error(f"❌ Register Failed! GitHub rejected push: {res['error']}")
 
+        # BLOCK 2: DYNAMIC INDIVIDUAL BALANCES LIVE-LOOKUP TRACKER
+        st.markdown("---")
+        st.write(f"#### {active_txt['balance_audit_title']}")
+        if not users_df.empty:
+            # Map clean list display labels for administrative lookup selector logic
+            users_df["AuditLabel"] = users_df["Name"].astype(str) + " (" + users_df["EmployeeID"].astype(str) + ")"
+            audit_options = users_df["AuditLabel"].tolist()
+            
+            selected_audit_target = st.selectbox(active_txt["delete_select"], audit_options, index=0)
+            
+            if selected_audit_target:
+                # Isolate target account data record profiles row parameters
+                audit_record = users_df[users_df["AuditLabel"] == selected_audit_target].iloc[0]
+                audit_username = audit_record["Username"]
+                audit_emp_id = str(audit_record["EmployeeID"]).strip().upper()
+                audit_max_limit = float(audit_record["Limit"])
+                
+                # Fetch live totals math directly across all transactions filtered against target employee key
+                if not receipts_df.empty:
+                    receipts_df["EmployeeID"] = receipts_df["EmployeeID"].astype(str).str.strip().str.upper()
+                    receipts_df["ReimbursedAmount"] = pd.to_numeric(receipts_df["ReimbursedAmount"], errors='coerce').fillna(0.0)
+                    
+                    matched_receipts = receipts_df[receipts_df["EmployeeID"] == audit_emp_id]
+                    audit_total_used = matched_receipts["ReimbursedAmount"].sum()
+                else:
+                    audit_total_used = 0.0
+                    
+                audit_remaining = audit_max_limit - audit_total_used
+                
+                # Render Real-time Visual Financial Balance Metric Box inside the Admin Console
+                st.markdown(f"""
+                <div class="metric-card" style="border-left: 5px solid #1E3A8A; background-color: #F8FAFC;">
+                    <p style="margin: 2px 0; font-size: 14px; color: #64748B;"><strong>Account Roster Key:</strong> {audit_username}@{audit_emp_id}</p>
+                    <h3 style="margin: 8px 0 15px 0; font-weight: 700; color: #1E3A8A !important;">{audit_record['Name']}</h3>
+                    <div style="display: flex; gap: 40px; margin-top: 10px;">
+                        <div>
+                            <span style="font-size: 12px; text-transform: uppercase; color: #94A3B8; font-weight: 600;">Yearly Allowance</span>
+                            <h4 style="margin: 2px 0; font-weight: 700; color: #1E293B !important;">${audit_max_limit:.2f}</h4>
+                        </div>
+                        <div>
+                            <span style="font-size: 12px; text-transform: uppercase; color: #94A3B8; font-weight: 600;">Used to Date</span>
+                            <h4 style="margin: 2px 0; font-weight: 700; color: #DC2626 !important;">${audit_total_used:.2f}</h4>
+                        </div>
+                        <div>
+                            <span style="font-size: 12px; text-transform: uppercase; color: #94A3B8; font-weight: 600;">Credit Left</span>
+                            <h4 style="margin: 2px 0; font-weight: 700; color: #10B981 !important;">${audit_remaining:.2f}</h4>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Nested form handler for administrative delete mutations inside the contextual lookup frame block
+                with st.form("delete_user_context_form"):
+                    st.markdown('<div class="delete-btn">', unsafe_allow_html=True)
+                    delete_btn = st.form_submit_button(active_txt["delete_btn"])
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    if delete_btn:
+                        # Clean dropdown parse column if present before concat updates trigger
+                        if "AuditLabel" in users_df.columns:
+                            users_df = users_df.drop(columns=["AuditLabel"])
+                        updated_users = users_df[users_df["Username"] != audit_username]
+                        
+                        with st.spinner(active_txt["syncing"]):
+                            res = save_and_push_to_github(receipts_df, updated_users)
+                            if res["success"]:
+                                st.success(active_txt["delete_success"])
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Delete Failed! GitHub rejected spreadsheet push: {res['error']}")
+        else:
+            st.info(active_txt["balance_audit_loading"])
+
+        # BLOCK 3: SEARCHABLE ACTIVE STAFF ROSTER DIRECTORY TABLE
+        st.markdown("---")
         st.write(f"#### {active_txt['roster']}")
         if not users_df.empty:
-            st.dataframe(users_df[["EmployeeID", "Name", "Type", "Limit", "Username"]], use_container_width=True)
+            # Personnel search bar text input injection parameter
+            search_query = st.text_input("", placeholder=active_txt["search_staff_placeholder"], label_visibility="collapsed").strip().lower()
             
-            st.markdown("---")
-            with st.form("delete_user_form"):
-                st.write(f"#### {active_txt['delete_title']}")
-                user_list = users_df["Username"].tolist()
-                target_user = st.selectbox(active_txt["delete_select"], user_list)
+            # Filter rows dynamically on data visualization table based on live query matches
+            if search_query:
+                filtered_users_df = users_df[
+                    users_df["Name"].astype(str).str.lower().str.contains(search_query) |
+                    users_df["EmployeeID"].astype(str).str.lower().str.contains(search_query) |
+                    users_df["Username"].astype(str).str.lower().str.contains(search_query)
+                ]
+            else:
+                filtered_users_df = users_df
                 
-                st.markdown('<div class="delete-btn">', unsafe_allow_html=True)
-                delete_btn = st.form_submit_button(active_txt["delete_btn"])
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                if delete_btn:
-                    updated_users = users_df[users_df["Username"] != target_user]
-                    with st.spinner(active_txt["syncing"]):
-                        res = save_and_push_to_github(receipts_df, updated_users)
-                        if res["success"]:
-                            st.success(active_txt["delete_success"])
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Delete Failed! GitHub rejected spreadsheet push: {res['error']}")
+            st.dataframe(filtered_users_df[["EmployeeID", "Name", "Type", "Limit", "Username"]], use_container_width=True)
         else:
             st.info(active_txt["delete_empty"])
 
